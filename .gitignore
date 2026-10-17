@@ -1,0 +1,34 @@
+node_modules/
+# 构建产物
+dist/
+web/dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# 本地数据与密钥：绝不入库
+.env
+.env.local
+data/
+keys/
+backups/
+logs/
+*.db
+*.db-shm
+*.db-wal
+
+# Tauri / Rust
+apps/shell/src-tauri/target/
+apps/shell/src-tauri/gen/
+apps/shell/binaries/*.exe
+
+# 内嵌运行时与打包产物
+runtime/
+*.zip
+VERSION.txt
+
+# 编辑器/系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,56 @@
+{
+  "name": "shopcash",
+  "version": "0.4.0",
+  "private": true,
+  "description": "店收宝 ShopCash — 单机门店收银与收款记账软件（钱只进商家自己的微信/支付宝商户号，软件零资金介入）",
+  "license": "UNLICENSED",
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "jest",
+    "test:cov": "jest --coverage",
+    "dev": "vite --host 127.0.0.1 --port 5199",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5199",
+    "test:ui": "node scripts/ui-check.mjs",
+    "build:shared": "tsc -p packages/shared/tsconfig.json",
+    "test:ui:build": "npm run build && npm run preview -- --port 5199 & sleep 6; node scripts/ui-check.mjs",
+    "prepare": "npm run build:shared",
+    "verify": "npm run lint && npm test && npm run build",
+    "test:api": "node scripts/api-rules-check.mjs",
+    "check": "npm run lint && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/node": "22.15.3",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "esbuild": "^0.25.12",
+    "jest": "30.0.5",
+    "playwright": "^1.53.0",
+    "ts-jest": "29.4.0",
+    "typescript": "5.9.2",
+    "vite": "^6.3.5"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.1"
+  },
+  "workspaces": [
+    "packages/shared"
+  ],
+  "keywords": [
+    "pos",
+    "cashier",
+    "nestjs",
+    "vue3",
+    "sqlite",
+    "wechat-pay",
+    "alipay",
+    "reconciliation",
+    "self-hosted",
+    "windows"
+  ]
+}
