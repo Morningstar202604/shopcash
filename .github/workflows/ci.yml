@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # prepare 钩子会编译 packages/shared 产出 ESM，供前端与开发接口复用
+      - name: 安装依赖
+        run: npm ci --include=dev
+
+      - name: 类型检查
+        run: npm run lint
+
+      - name: 内核单测（含覆盖率门槛 90%）
+        run: npm test -- --coverage
+
+      - name: 前端构建
+        run: npm run build
+
+      - name: 安装界面自检所需浏览器
+        run: npx playwright install --with-deps chromium
+
+      # 关键：服务与两项端到端检查必须在同一个 step 内，
+      # GitHub Actions 每个 step 是独立 shell，跨 step 的后台进程不会存活
+      - name: 端到端自检（15 项资金/权限规则 + 18 步界面实跑）
+        run: |
+          set -e
+          npx vite --host 127.0.0.1 --port 5199 > /tmp/vite.log 2>&1 &
+          VITE_PID=$!
+          trap 'kill $VITE_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:5199/api/bootstrap/state > /dev/null && break
+            sleep 1
+          done
+          if ! curl -sf http://127.0.0.1:5199/api/bootstrap/state > /dev/null; then
+            echo "开发接口未就绪，vite 日志："; cat /tmp/vite.log; exit 1
+          fi
+          npm run test:api
+          SHOTS_DIR="$RUNNER_TEMP/shots" npm run test:ui
+
+      - name: 归档界面截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: ${{ runner.temp }}/shots/*.png
+          if-no-files-found: error
