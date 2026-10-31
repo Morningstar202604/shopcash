@@ -24,6 +24,10 @@ async function save() {
     await api(`/channels/${form.code}/credentials`, { method: 'PUT', body: { ...form } })
     toast('ok', '凭据已加密保存')
     panel.value = null
+    form.appid = ''
+    form.mchid = ''
+    form.privateKeyPem = ''
+    form.apiV3Key = ''
     form.confirmPassword = ''
     await load()
   } catch (e) {

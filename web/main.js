@@ -29,7 +29,7 @@ const router = createRouter({ history: createWebHistory(), routes })
 
 let bootChecked = false
 
-// 守卫顺序：未完成首启 → /setup；未登录 → /login；mustChangePwd → /change-password；角色不足 → /cashier
+// 守卫顺序：未完成首启 → /setup；未登录 → /login；角色不足 → /cashier
 router.beforeEach(async (to) => {
   if (!bootChecked) {
     try {
@@ -53,7 +53,6 @@ router.beforeEach(async (to) => {
       return '/login'
     }
   }
-  if (state.me?.mustChangePwd) return false
   if (to.meta.ownerOnly && state.me?.role !== 'OWNER') return '/cashier'
   return true
 })

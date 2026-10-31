@@ -7,10 +7,10 @@
 `NestJS 11` · `TypeScript` · `Prisma 6 + SQLite(WAL)` · `Vue 3.5` · `Tauri 2` · `Node 22 LTS`
 
 [![CI](https://github.com/badhope/shopcash/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/shopcash/actions/workflows/ci.yml)
-![单测](https://img.shields.io/badge/%E5%8D%95%E6%B5%8B-34%20%E5%85%A8%E8%BF%87-0FA968)
+![单测](https://img.shields.io/badge/%E5%8D%95%E6%B5%8B-55%20%E5%85%A8%E8%BF%87-0FA968)
 ![覆盖率](https://img.shields.io/badge/%E8%A6%86%E7%9B%96%E7%8E%87-100%25-0FA968)
-![资金规则](https://img.shields.io/badge/%E7%A1%AC%E8%A7%84%E5%88%99%E5%88%B0%E7%AB%AF%E5%88%B0%E7%AB%AF-15%2F15-0FA968)
-![界面自检](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2%E5%AE%9E%E8%B7%91-18%20%E6%AD%A5%C2%B7%E9%9B%B6%E6%8A%A5%E9%94%99-0FA968)
+![资金规则](https://img.shields.io/badge/%E7%A1%AC%E8%A7%84%E5%88%99%E5%88%B0%E7%AB%AF%E5%88%B0%E7%AB%AF-24%2F24-0FA968)
+![界面自检](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2%E5%AE%9E%E8%B7%91-20%20%E6%AD%A5%C2%B7%E9%9B%B6%E6%8A%A5%E9%94%99-0FA968)
 ![零资金介入](https://img.shields.io/badge/%E8%B5%84%E9%87%91%E9%93%BE%E8%B7%AF-%E8%BD%AF%E4%BB%B6%E4%B8%8D%E7%A2%B0%E9%92%B1-1F2328)
 
 > 中文 · [English below](#english-overview)
@@ -21,7 +21,7 @@
 
 ## 为什么是"单机版"
 
-本项目源自对开源仓库 KeBaiPay（`gitcode.com/badhope/KeBaiPay`）的安全与合规审查。那次审查发现一个结构性问题：
+本项目源自对开源仓库 KeBaiPay（原址 `gitcode.com/badhope/KeBaiPay`，2026-10-31 核查该地址已 404，溯源以本文档与 PRD 1.1 为准）的安全与合规审查。那次审查发现一个结构性问题：
 它宣称"资金绝不过平台"，但数据模型是**平台级单一商户号 + 无子商户进件 + 无结算实现路径**——真拿去给多个商家收款，
 正好落在央行定义的"二清"上（以平台对接或"大商户"模式接入持证机构，留存商户结算资金并自行开展商户资金清算）。
 
@@ -30,11 +30,11 @@
 ## 界面实拍
 
 以下截图由 Playwright 驱动 Chromium **实跑主流程**产生（`npm run test:ui`，CI 每次构建都会跑并把截图归档成制品），不是设计稿、不是摆拍。
-每张图对应一条真实代码路径：小键盘录入、收款码等待、到账翻转、金额不符、订单簿、异常结案、班次交接、渠道自检。
+20 张截图覆盖：首启向导空态与弱口令拦截、小键盘录入、收款码等待、到账翻转、金额不符、0 元拒绝、订单簿与状态时间线、异常结案二次确认、班次交接、总览、渠道自检、店员权限边界。
 
-| 收银台·金额录入 | 等待顾客付款 | 订单簿 |
-|---|---|---|
-| ![收银台](docs/screenshots/04-cashier-amount.png) | ![等待付款](docs/screenshots/05-cashier-qrcode-waiting.png) | ![订单](docs/screenshots/09-orders.png) |
+| 首启向导（弱口令被拦） | 收银台·金额录入 | 等待顾客付款 | 订单簿 |
+|---|---|---|---|
+| ![首启](docs/screenshots/00b-setup-weak-rejected.png) | ![收银台](docs/screenshots/04-cashier-amount.png) | ![等待付款](docs/screenshots/05-cashier-qrcode-waiting.png) | ![订单](docs/screenshots/09-orders.png) |
 
 | 待人工处理（作废需二次确认） | 班次交接 | 总览 | 渠道配置 |
 |---|---|---|---|
@@ -44,16 +44,19 @@
 
 **已实现并通过自动化验证**
 
-- 首启向导（无默认口令，弱口令表直接封禁 `ChangeAdmin2026` / `Admin@2026` 这类写法）
-- 收银台：小键盘录入、`F2` 微信 / `F3` 支付宝 / `F4` 现金、到账状态实时翻转与提示音
+- 首启向导：无默认口令，`checkPassword()` 统一校验长度 / 大小写 / 数字 / 非用户名 / 弱口令表（`ChangeAdmin2026`、`Admin@2026` 等 10 条，含子串变体）
+- 收银台：小键盘录入、`F2` 微信 / `F3` 支付宝 / `F4` 现金、到账状态实时翻转与提示音、待付款时禁止重复下单、可停止查单
 - 订单状态机 `PENDING → PAYING → PAID → REFUNDING → REFUNDED`，另有 `CLOSED` 与 `EXCEPTION`
-- 到账三层兜底：可选回调 → 主动查单退避轮询（3s/10s/30s/2min/5min，最长 15 分钟）→ 每日账单对账
-- 订单簿与状态时间线、CSV 导出（UTF-8 BOM，防公式注入）
-- 班次与交接班：备用金、应收现金/线上、实点现金、差额与交接说明
-- 员工分账号与权限分级（店主 / 店员），数据范围过滤落在服务端
-- 待人工处理工作台：金额不符、迟到成功等异常必须店主确认结案，提供补录 / 作废两步确认
-- 渠道配置中心：mock / 微信 / 支付宝三套凭据表单 + 配置自检 + 店主口令二次确认
-- 审计哈希链、备份恢复、诊断信息包、开发期一键界面与接口自检
+- 主动查单退避：3s/10s/30s/2min/5min，之后每 5min 一次，到 `orderExpireMinutes`（默认 15 分钟）关单
+- 订单簿与状态时间线（UTC 存储、按 +08:00 展示）、CSV 导出（UTF-8 BOM、引号转义、公式前缀防护）
+- 班次与交接班：备用金、本班应收现金/线上（实时计算）、实点现金、差额与交接说明；登出重登自动恢复当班班次
+- 员工分账号与权限分级（店主 / 店员），订单、总览、异常、渠道的数据范围过滤全在服务端
+- 待人工处理工作台：金额不符、迟到成功等异常必须店主输入口令二次确认后才可补录 / 作废
+- 渠道配置中心：mock / 微信 / 支付宝三套凭据表单 + 配置自检 + 店主口令二次确认 + 只回显掩码
+- 开发期一键接口自检（24 项断言）与界面实跑（20 步、零控制台报错）
+
+**仅开发桩、尚未落地真实后端**：NestJS sidecar、Prisma/SQLite 迁移、Tauri 壳、真实微信/支付宝渠道、退款、
+审计哈希链、备份恢复、诊断信息包、每日对账。开发期数据在内存里，进程重启即回到演示数据。
 
 **尚未实现（V2 路线）**：商品库与扫码枪、小票打印、多门店集中管理、对外开放 API、AI 查账助手、服务商进件与分账。
 
@@ -78,18 +81,18 @@ npm run dev       # 本机界面 + 开发期 mock API：http://127.0.0.1:5199
 自检命令（改资金逻辑必须四条全绿才算完成）：
 
 ```bash
-npm run test:cov      # 内核单测 + 覆盖率
-npm run test:api      # 15 项资金/权限硬规则端到端检查
-npm run test:ui       # 18 步界面实跑 + 逐页截图 + 控制台错误采集
-npm run lint          # tsc --noEmit
+npm run test:cov      # 内核单测 + 覆盖率门槛 90%
+npm run test:api      # 24 项资金/权限/会话硬规则端到端检查
+npm run test:ui       # 20 步界面实跑 + 逐页截图 + 控制台错误采集
+npm run lint          # tsc --noEmit（覆盖 packages/**/*.ts）
 ```
 
-演示口令（仅开发期 mock 服务，生产不存在默认口令）：店主 `owner / Shop2026test`，店员 `staff / Abc12345`。
+演示口令（仅开发期 mock 服务，生产不存在默认口令）：店主 `owner / Shop2026test`，店员 `staff / Staff2026test`。
 
 ## 目录结构
 
 ```
-packages/shared/   金额换算 + 订单状态机（唯一真相源，编译出 ESM 给前端与 mock 复用）
+packages/shared/   金额换算 + 订单状态机 + 口令策略 + 时间格式化 + CSV + 查单退避（唯一真相源，编译出 ESM 给前端与 mock 复用）
 web/               Vue 3 收银界面
 tools/             mock-server.js —— 仅开发期使用的接口桩
 scripts/           ui-check.mjs（界面实跑）、api-rules-check.mjs（规则端到端）、push-remotes.sh
@@ -98,11 +101,12 @@ docs/              店收宝-PRD-v1.md、设计定稿、screenshots/
 
 ## 架构要点
 
-- **单进程**：Tauri(Rust) 壳负责窗口、托盘、自启与 sidecar 编排；业务全部在 Node 侧
+- **当前可运行形态**：Vite 开发服务器把 `tools/mock-server.js` 挂成 `/api` 中间件，界面与接口同源，数据在内存
+- **生产目标形态（未实现）**：Tauri(Rust) 壳 → NestJS sidecar（仅听 127.0.0.1）→ Prisma + SQLite(WAL)
 - **只绑 `127.0.0.1`**，无公网监听端口，无 Redis、无 Docker、无云服务器
-- **无 Redis 的并发控制**：进程内 Mutex（订单号粒度）→ SQLite 事务 → 条件原子更新 → 唯一约束幂等
-- **凭据加密**：渠道私钥/APIv3 密钥用本机 `keys/master.key` 做 AES-256-GCM 信封加密落库，界面只回显掩码
-- **容灾**：每 30 分钟 `VACUUM INTO` 快照，RPO 30 分钟 / RTO 约 30 分钟；磁盘写满禁止新建订单而非丢账
+- **并发控制设计**：进程内 Mutex（订单号粒度）→ SQLite 事务 → 条件原子更新 → 唯一约束幂等
+- **金额口径**：全链路整数分；元↔分只走 `yuanToFen()` / `fenToYuan()`，超出两位小数直接拒绝
+- **凭据处理**：界面只回显掩码；真实 AES-256-GCM 落库随真实后端交付
 
 ## English Overview
 

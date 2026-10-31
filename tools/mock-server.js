@@ -4,9 +4,10 @@
  *
  * 覆盖 PRD 第 8 章的核心契约：首启 / 登录 / 班次 / 收银 / 查单兜底 / 订单 / 异常 / 渠道。
  */
-import { decidePayment } from '@shopcash/shared'
+import { decidePayment, queryAtMs, checkPassword } from '@shopcash/shared'
+import { statfsSync } from 'node:fs'
 
-const CASHIER_PWD = 'Abc12345'
+const CASHIER_PWD = 'Staff2026test'
 const OWNER_PWD = 'Shop2026test'
 const EXCEPTION_REASONS = ['AMOUNT_MISMATCH', 'LATE_SUCCESS', 'PARSE_FAIL', 'NO_CALLBACK', 'MANUAL', 'REFUND_FAILED']
 
@@ -69,15 +70,43 @@ function applyResult(db, order, result, source) {
 }
 
 function nextQueryAt(createdAt, attempt, backoff) {
-  const base = new Date(createdAt).getTime()
-  const steps = backoff.length
-  if (attempt >= steps + 2) return null
-  const idx = Math.min(attempt, steps - 1)
-  let t = base
-  for (let i = 0; i <= idx; i += 1) t += backoff[i]
-  if (attempt >= steps) t += 300000 * (attempt - steps + 1)
-  return new Date(t).toISOString()
+  return new Date(queryAtMs(new Date(createdAt).getTime(), attempt, backoff)).toISOString()
 }
+
+function openShiftOf(db, userId) {
+  return db.shifts.find((s) => s.status === 'OPEN' && s.userId === userId) || null
+}
+
+function shiftTotals(db, shiftId) {
+  const mine = db.orders.filter((o) => o.shiftId === shiftId)
+  const paidOn = (o) => o.status === 'PAID' || o.status === 'REFUNDING' || o.status === 'REFUNDED'
+  const paid = mine.filter(paidOn)
+  const sum = (arr) => arr.reduce((a, o) => a + o.amountFen, 0)
+  return {
+    paidCount: paid.length,
+    paidFen: sum(paid),
+    cashFen: sum(paid.filter((o) => o.codeType === 'CASH')),
+    onlineFen: sum(paid.filter((o) => o.codeType !== 'CASH')),
+    cashCount: paid.filter((o) => o.codeType === 'CASH').length,
+    exceptionCount: mine.filter((o) => o.status === 'EXCEPTION').length,
+  }
+}
+
+function diskFreeMb() {
+  try {
+    const s = statfsSync(process.cwd())
+    return Math.floor((Number(s.bavail) * Number(s.bsize)) / 1024 / 1024)
+  } catch {
+    return null
+  }
+}
+
+function mask(value) {
+  const text = String(value || '')
+  if (text.length <= 6) return '*'.repeat(text.length)
+  return `${text.slice(0, 3)}${'*'.repeat(Math.min(12, text.length - 6))}${text.slice(-3)}`
+}
+
 
 function buildPayload(order) {
   if (order.codeType === 'CASH') return { kind: 'NONE' }
@@ -88,9 +117,17 @@ function buildPayload(order) {
 function summary(db) {
   const dayStart = new Date()
   dayStart.setHours(0, 0, 1, 0)
-  const today = db.orders.filter((o) => new Date(o.createdAt) >= dayStart)
+  const isOwner = db.session.role === 'OWNER'
+  // 数据范围：店员只看本班，店主看全店当日（PRD 3.2）
+  const scope = isOwner
+    ? db.orders
+    : db.orders.filter((o) => o.createdById === db.session.userId && o.shiftId === db.session.shiftId)
+  const today = scope.filter((o) => new Date(o.createdAt) >= dayStart)
   const paid = today.filter((o) => o.status === 'PAID' || o.status === 'REFUNDING' || o.status === 'REFUNDED')
   const sum = (arr) => arr.reduce((a, o) => a + o.amountFen, 0)
+  const shift = openShiftOf(db, db.session.userId)
+  const shiftView = shift ? shiftTotals(db, shift.id) : null
+  const free = diskFreeMb()
   return {
     todayCount: today.length,
     paidCount: paid.length,
@@ -98,9 +135,15 @@ function summary(db) {
     cashFen: sum(paid.filter((o) => o.codeType === 'CASH')),
     onlineFen: sum(paid.filter((o) => o.codeType !== 'CASH')),
     refundFen: sum(today.filter((o) => o.status === 'REFUNDED')),
-    exceptionCount: db.orders.filter((o) => o.status === 'EXCEPTION').length,
+    exceptionCount: isOwner ? db.orders.filter((o) => o.status === 'EXCEPTION').length : scope.filter((o) => o.status === 'EXCEPTION').length,
     unpaidCount: today.filter((o) => o.status === 'PENDING' || o.status === 'PAYING').length,
-    diskFreeMb: 18423,
+    shiftOpen: Boolean(shift),
+    shiftId: shift?.id || null,
+    shiftPaidCount: shiftView?.paidCount ?? 0,
+    shiftPaidFen: shiftView?.paidFen ?? 0,
+    shiftCashFen: shiftView?.cashFen ?? 0,
+    shiftOnlineFen: shiftView?.onlineFen ?? 0,
+    diskFreeMb: free,
     clockDriftMin: 0,
     diffCount: 0,
     storeName: db.storeName,
@@ -171,12 +214,26 @@ export function handle(db, method, rawUrl, body) {
   if (method === 'POST' && p === '/__test/reset') {
     Object.assign(db, createSeed())
     reseedOrders(db)
-    return J(200, { ok: true })
+    // ?setup=0 用于截首启向导：清空用户并标记未初始化
+    if (url.searchParams.get('setup') === '0') {
+      db.setupDone = false
+      db.storeName = ''
+      db.users = []
+      db.orders = []
+      db.events = []
+      db.shifts = []
+    }
+    return J(200, { ok: true, setupDone: db.setupDone })
   }
   if (method === 'POST' && p === '/bootstrap/setup') {
+    if (db.setupDone) return E(409, 40908, '已完成初始化，不能重复设置')
+    const username = String(body.username || '').trim() || 'owner'
+    const pwd = String(body.password || '')
+    const verdict = checkPassword(pwd, username)
+    if (!verdict.ok) return E(400, 40011, `口令不符合要求：${verdict.failed.join('、')}`)
     db.setupDone = true
     db.storeName = body.storeName
-    if (!db.users.length) db.users.push({ id: 'u_owner', username: body.username || 'owner', displayName: '店主', role: 'OWNER', status: 'ACTIVE', pwd: body.password })
+    db.users = [{ id: 'u_owner', username, displayName: '店主', role: 'OWNER', status: 'ACTIVE', pwd }]
     return J(200, { ok: true })
   }
 
@@ -185,21 +242,36 @@ export function handle(db, method, rawUrl, body) {
     const u = db.users.find((x) => x.username === body.username)
     if (!u || body.password !== u.pwd) return E(401, 40301, '用户名或口令错误')
     if (u.status === 'DISABLED') return E(403, 40302, '账号已停用，请联系店主')
-    db.session = { userId: u.id, role: u.role, username: u.username, shiftId: null, mustChangePwd: false }
+    const open = openShiftOf(db, u.id)
+    db.session = { userId: u.id, role: u.role, username: u.username, shiftId: open?.id || null, mustChangePwd: false }
     return J(200, db.session)
   }
   if (method === 'POST' && p === '/auth/logout') {
-    db.session.shiftId = null
+    // 只结束会话，不结束班次：班次是业务事实，重登后由 openShiftOf 自动恢复
+    db.session = { userId: null, role: null, username: null, shiftId: null, mustChangePwd: false }
     return J(200, { ok: true })
   }
-  if (p === '/auth/me') return J(200, { ...db.session, user: db.users.find((u) => u.id === db.session.userId) })
+  if (p === '/auth/me') {
+    if (!db.session.userId) return E(401, 40101, '未登录')
+    const open = openShiftOf(db, db.session.userId)
+    db.session.shiftId = open?.id || null
+    return J(200, { ...db.session, user: db.users.find((u) => u.id === db.session.userId) })
+  }
 
   // 班次
   if (p === '/shifts' && method === 'GET') {
-    return J(200, db.shifts.map((s) => ({ ...s, userName: db.users.find((u) => u.id === s.userId)?.displayName || s.userId })))
+    return J(200, db.shifts.map((s) => {
+      const live = s.status === 'OPEN' ? shiftTotals(db, s.id) : null
+      return {
+        ...s,
+        ...(live ? { expectedCashFen: live.cashFen, expectedOnlineFen: live.onlineFen, paidCount: live.paidCount, cashCount: live.cashCount, exceptionCount: live.exceptionCount } : {}),
+        userName: db.users.find((u) => u.id === s.userId)?.displayName || s.userId,
+      }
+    }))
   }
   if (method === 'POST' && p === '/shifts/open') {
-    const open = db.shifts.find((s) => s.status === 'OPEN' && s.userId === db.session.userId)
+    if (!db.session.userId) return E(401, 40101, '未登录')
+    const open = openShiftOf(db, db.session.userId)
     if (open) return E(409, 40906, '已有进行中的班次')
     const now = iso()
     const shift = {
@@ -224,13 +296,12 @@ export function handle(db, method, rawUrl, body) {
     if (!shift) return E(404, 40401, '班次不存在')
     if (db.session.role !== 'OWNER' && shift.userId !== db.session.userId) return E(403, 40313, '只能交自己的班')
     if (shift.status === 'CLOSED') return J(200, shift)
-    const mine = db.orders.filter((o) => o.shiftId === shift.id)
-    const paidOn = (o) => o.status === 'PAID' || o.status === 'REFUNDING' || o.status === 'REFUNDED'
-    shift.expectedCashFen = mine.filter((o) => paidOn(o) && o.codeType === 'CASH').reduce((a, o) => a + o.amountFen, 0)
-    shift.expectedOnlineFen = mine.filter((o) => paidOn(o) && o.codeType !== 'CASH').reduce((a, o) => a + o.amountFen, 0)
-    shift.paidCount = mine.filter(paidOn).length
-    shift.cashCount = mine.filter((o) => paidOn(o) && o.codeType === 'CASH').length
-    shift.exceptionCount = mine.filter((o) => o.status === 'EXCEPTION').length
+    const totals = shiftTotals(db, shift.id)
+    shift.expectedCashFen = totals.cashFen
+    shift.expectedOnlineFen = totals.onlineFen
+    shift.paidCount = totals.paidCount
+    shift.cashCount = totals.cashCount
+    shift.exceptionCount = totals.exceptionCount
     shift.countedCashFen = body.countedCashFen ?? null
     shift.diffFen = shift.countedCashFen === null ? null : shift.countedCashFen - shift.expectedCashFen
     shift.note = body.note || ''
@@ -242,6 +313,7 @@ export function handle(db, method, rawUrl, body) {
 
   // 收银
   if (method === 'POST' && p === '/cashier/orders') {
+    if (!db.session.userId) return E(401, 40101, '未登录')
     if (!db.session.shiftId) return E(403, 40320, '未开班次')
     // 与生产 DTO 同口径：金额必须是正整数分且 ≤ 单笔上限（前端已用 yuanToFen 拦一次，服务端必须再拦）
     if (!Number.isInteger(body.amountFen) || body.amountFen <= 0) {
@@ -300,19 +372,20 @@ export function handle(db, method, rawUrl, body) {
       o.attempt += 1
       if (lateProbe) o.lateChecked = true
       const paid = o.mockPaidAt && new Date(o.mockPaidAt) <= new Date()
+      const expired = Date.now() - new Date(o.createdAt).getTime() >= db.settings.orderExpireMinutes * 60000
       if (paid) {
         // 必须把渠道实付金额原样交给状态机，否则「金额不符」这条规则会被演示代码悄悄吃掉
         applyResult(db, o, { status: 'SUCCESS', amountFen: o.amountFenPaid ?? o.amountFen }, 'QUERY')
-      } else if (o.attempt >= db.settings.queryBackoffMs.length + 2) {
+      } else if (expired) {
         applyResult(db, o, { status: 'UNKNOWN', amountFen: null }, 'SCHEDULER')
         if (o.status !== 'CLOSED') {
-          event(db, o.id, o.status, 'CLOSED', 'SCHEDULER', '超时关单')
+          event(db, o.id, o.status, 'CLOSED', 'SCHEDULER', `超时 ${db.settings.orderExpireMinutes} 分钟关单`)
           o.prevStatus = o.status
           o.status = 'CLOSED'
           o.closedAt = iso()
         }
       }
-      o.nextQueryAt = o.status === 'PENDING' || o.status === 'PAYING'
+      o.nextQueryAt = o.status === 'PENDING' || o.status === 'PAYING' && !expired
         ? nextQueryAt(o.createdAt, o.attempt, db.settings.queryBackoffMs)
         : null
     }
@@ -385,9 +458,14 @@ export function handle(db, method, rawUrl, body) {
   // 异常工作台：迟到成功在这里人工结案
   const resolveMatch = p.match(/^\/exceptions\/([^/]+)\/resolve$/)
   if (method === 'POST' && resolveMatch) {
+    if (db.session.role !== 'OWNER') return E(403, 40313, '只有店主可处理待处理订单')
     const o = db.orders.find((x) => x.orderNo === resolveMatch[1])
     if (!o) return E(404, 40401, '订单不存在')
     if (o.status !== 'EXCEPTION') return E(409, 40907, '该订单不在异常态')
+    // PRD 199：异常结案属敏感操作，必须店主口令二次确认，失败只回 40311
+    if (!body.confirmPassword) return E(400, 40002, '异常单结案需要店主口令二次确认')
+    const owner = db.users.find((u) => u.id === db.session.userId)
+    if (!owner || body.confirmPassword !== owner.pwd) return E(403, 40311, '二次确认口令错误')
     if (body.action === 'RECORD_IN') {
       event(db, o.id, 'EXCEPTION', 'PAID', 'MANUAL', `店主人工补录：${body.note || ''}`)
       o.status = 'PAID'
@@ -421,14 +499,18 @@ export function handle(db, method, rawUrl, body) {
     const ch = db.channels.find((c) => c.code === p.split('/')[2])
     if (!ch) return E(404, 40401, '渠道不存在')
     if (db.session.role !== 'OWNER') return E(403, 40313, '只有店主可配置渠道')
-    if (body.confirmPassword !== OWNER_PWD) return E(403, 40311, '二次确认口令错误')
-    if (!body.appid || !body.mchid || !body.privateKeyPem || !body.apiV3Key) return E(400, 40001, '凭据不完整：appid / 商户号 / 私钥 / APIv3 密钥均必填')
+    const owner = db.users.find((u) => u.id === db.session.userId)
+    if (!owner || body.confirmPassword !== owner.pwd) return E(403, 40311, '二次确认口令错误')
+    const missing = ['appid', 'mchid', 'privateKeyPem', 'apiV3Key'].filter((k) => !String(body[k] || '').trim())
+    if (missing.length) return E(400, 40001, `凭据不完整：缺少 ${missing.join(' / ')}`)
     ch.configured = true
+    ch.lastCheckAt = iso()
+    ch.lastCheckOk = true
     ch.lastCheckMsg = '凭据已加密保存（演示：仅标记状态，不落真实密文）'
-    return J(200, ch)
+    return J(200, { ...ch, masked: { appid: mask(body.appid), mchid: mask(body.mchid) } })
   }
   if (p === '/settings') return method === 'GET' ? J(200, db.settings) : J(200, { ...db.settings, ...body })
-  if (p === '/users') return J(200, db.users)
+  if (p === '/users') return J(200, db.users.map((u) => ({ id: u.id, username: u.username, displayName: u.displayName, role: u.role, status: u.status })))
   if (p === '/dashboard/summary') return J(200, summary(db))
 
   return E(404, 40401, '接口不存在')

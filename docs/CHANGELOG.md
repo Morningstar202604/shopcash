@@ -1,5 +1,31 @@
 # 更新日志
 
+## v0.5.0（2026-10-31）
+
+**审计修复（阻断级）**
+- 会话与班次解耦：登出不再清空班次，重登按用户恢复当班班次（`openShiftOf`）；修复「登出重登后开班 40906 + 收银 40320」死锁
+- 班次应收实时计算：`/shifts` 与交班共用 `shiftTotals()`，开班期间 `expectedCashFen` 不再恒为 0；「本班实时」改读 `shiftPaidFen/shiftCashFen/shiftOnlineFen`，换班即清零，不再混入全店当日汇总
+- 收银台 `window` keydown 监听在 `onUnmounted` 移除，SPA 往返不再累积 handler；下单加 `busy` 与「上一笔未完成」双闸；新增「停止查单」
+- 异常结案改为强制店主口令二次确认（`confirmPassword`，失败 40311），界面统一改为弹层，订单详情跳转到待处理页结案
+- CSV 导出统一走 `toCsv()`：引号/逗号/换行转义 + `= + - @` 前缀防护 + UTF-8 BOM
+- 口令策略收敛到 `checkPassword()`：长度 / 大小写 / 数字 / 非用户名 / 弱口令表（10 条含子串），首启向导与 `POST /bootstrap/setup` 前后端同一实现
+
+**审计修复（建议级）**
+- 查单退避改用 `queryAtMs()`：3s/10s/30s/2min/5min 之后每 5min，按 `orderExpireMinutes`（默认 15 分钟）关单，不再累积求和拖到 17.7 分钟
+- 时间显示统一 `formatDateTime()/formatTime()/formatMonthDayMinute()`，UTC 存储按 +08:00 展示，订单列表不再慢 8 小时
+- 总览「运行状态」去掉硬编码的磁盘/时钟/对账绿色断言：磁盘读真实可用空间，时钟偏差与每日对账明确标注「开发桩未接入」
+- 金额展示全部走 `fenToYuan()`，不再有裸 `(x / 100).toFixed(2)`
+- 店员 `/dashboard/summary` 与订单列表同口径过滤，不再泄露全店当日金额与单量
+- 渠道凭据保存只回显掩码（`mask()`），保存后清空表单；`/users` 不再返回口令字段
+- 修掉 `main.js` 中指向不存在的 `/change-password` 路由导致的白屏
+- 修掉 `ui-check.mjs` 的 `delete opt._pw` 写法，浏览器探测逻辑恢复可读
+
+**文档与一致性**
+- README 功能现状重写：区分「已实现并通过自动化验证」与「仅开发桩、尚未落地真实后端」，删除审计链/备份/对账等超前表述
+- `package.json` license 由 `UNLICENSED` 改为 `MIT`，与 `LICENSE` 一致
+- `SECURITY.md` 支持版本对齐 0.4.x，并明确当前实现边界
+- 单测 34 → 55（新增口令策略、时间格式化、CSV、查单退避四组），接口自检 16 → 24 项，界面自检 18 → 20 步（补首启向导与弱口令拦截截图）
+
 ## v0.4.0（2026-10-18）
 
 **自动化**
@@ -34,6 +60,15 @@
 - PRD 里程碑表补状态，新增 19.1 实现进度对照与已知偏差清单
 - CLAUDE.md 补当前进度与「提交前四项全绿」要求
 
+## v0.3.1（2026-10-18）
+
+**仓库整理**
+- 新增 MIT `LICENSE`、`.editorconfig`、`.github/workflows/ci.yml`：CI 每次构建跑 lint → 单测+覆盖率 → 前端构建 → 15 项资金/权限端到端断言 → 18 步界面实跑，并把截图归档成构建制品
+- `scripts/ui-check.mjs` 去掉本机 Chromium 硬编码，改用 `CHROME_PATH` / `SHOTS_DIR` 环境变量，任意机器与 CI 可直接运行
+- `package.json`：`engines` 由 `22.x` 放宽为 `>=22.0.0`（node 24 上不再报 EBADENGINE），新增 `npm run check`
+- 文件权限修正：`CLAUDE.md`、PRD、设计稿等文档去掉多余可执行位
+- README 首屏加实拍大图与自检徽章（单测 34、覆盖率 100%、硬规则 15/15、界面 18 步零报错、零资金介入）
+
 ## v0.2.0（2026-10-13）
 - 金额换算与订单状态机内核，TDD 先行；34 单测，覆盖率 100%
 
@@ -43,12 +78,3 @@
 ---
 
 内容由 AI 生成
-
-## v0.3.1（2026-10-18）
-
-**仓库整理**
-- 新增 MIT `LICENSE`、`.editorconfig`、`.github/workflows/ci.yml`：CI 每次构建跑 lint → 单测+覆盖率 → 前端构建 → 15 项资金/权限端到端断言 → 18 步界面实跑，并把截图归档成构建制品
-- `scripts/ui-check.mjs` 去掉本机 Chromium 硬编码，改用 `CHROME_PATH` / `SHOTS_DIR` 环境变量，任意机器与 CI 可直接运行
-- `package.json`：`engines` 由 `22.x` 放宽为 `>=22.0.0`（node 24 上不再报 EBADENGINE），新增 `npm run check`
-- 文件权限修正：`CLAUDE.md`、PRD、设计稿等文档去掉多余可执行位
-- README 首屏加实拍大图与自检徽章（单测 34、覆盖率 100%、硬规则 15/15、界面 18 步零报错、零资金介入）

@@ -1,24 +1,18 @@
 <script setup>
-import { onMounted, reactive, ref, computed } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { api, state, toast, refreshSummary, beep, STATUS_TEXT, CODE_TEXT } from '../store.js'
-import { yuanToFen, fenToYuan, AmountError } from '@shopcash/shared'
+import { yuanToFen, fenToYuan, formatTime, AmountError } from '@shopcash/shared'
 
 const amountText = ref('')
 const remark = ref('')
 const amountErr = ref('')
+const busy = ref(false)
 const current = reactive({ order: null, status: '', attempt: 0, note: '' })
 const lastPaid = ref(null)
 let pollTimer = null
 
-const amountFen = computed(() => {
-  try {
-    return yuanToFen(amountText.value || '0')
-  } catch {
-    return 0
-  }
-})
-
-const shiftOpen = computed(() => Boolean(state.me?.shiftId))
+const shiftOpen = computed(() => Boolean(state.summary?.shiftOpen))
+const pending = computed(() => Boolean(current.order))
 
 function validateLive() {
   amountErr.value = ''
@@ -31,16 +25,20 @@ function validateLive() {
 }
 
 function pressKey(k) {
-  if (k === 'C') return (amountText.value = '')
+  if (k === 'C') {
+    amountText.value = ''
+    amountErr.value = ''
+    return
+  }
   if (k === '←') {
     amountText.value = amountText.value.slice(0, -1)
     return validateLive()
   }
   if (k === '.' && amountText.value.includes('.')) return
   if (k === '.' && !amountText.value) amountText.value = '0'
-  const next = amountText.value + k
-  if (/\.\d{2}$/.test(amountText.value) && k !== '.') return
-  amountText.value = next
+  if (/\.\d{2}$/.test(amountText.value)) return
+  if (!amountText.value && k === '00') return
+  amountText.value += k
   validateLive()
 }
 
@@ -59,8 +57,8 @@ async function poll(orderNo) {
       current.note = s.exceptionReason ? `异常原因：${s.exceptionReason}` : ''
       if (s.status === 'PAID') {
         beep('ok')
-        toast('ok', `已到账 ${fenToYuan(current.order?.amountFen ?? 0)} 元`)
-        lastPaid.value = { orderNo, at: new Date().toLocaleTimeString('zh-CN', { hour12: false }) }
+        toast('ok', `已到账 ${fenToYuan(s.amountFen ?? 0)} 元`)
+        lastPaid.value = { orderNo, at: formatTime(new Date().toISOString(), { withSeconds: true }) }
         current.order = null
         amountText.value = ''
         remark.value = ''
@@ -69,14 +67,16 @@ async function poll(orderNo) {
       }
       if (s.status === 'CLOSED' || s.status === 'EXCEPTION') {
         beep(s.status === 'EXCEPTION' ? 'warn' : 'err')
-        toast(s.status === 'EXCEPTION' ? 'warn' : 'err',
-          s.status === 'EXCEPTION' ? '这笔需要店主人工处理，已进待处理列表' : '订单已超时关闭；若顾客称已付款，请到待处理核对')
+        toast(
+          s.status === 'EXCEPTION' ? 'warn' : 'err',
+          s.status === 'EXCEPTION' ? '这笔需要店主人工处理，已进待处理列表' : '订单已超时关闭；若顾客称已付款，请到待处理核对',
+        )
         current.order = null
         refreshSummary()
         return
       }
-      if (s.nextQueryAt) pollTimer = setTimeout(tick, Math.max(600, new Date(s.nextQueryAt) - Date.now()))
-      else pollTimer = setTimeout(tick, 2000)
+      const wait = s.nextQueryAt ? Math.max(600, new Date(s.nextQueryAt) - Date.now()) : 2000
+      pollTimer = setTimeout(tick, wait)
     } catch {
       pollTimer = setTimeout(tick, 2000)
     }
@@ -85,7 +85,9 @@ async function poll(orderNo) {
 }
 
 async function create(codeType) {
+  if (busy.value) return
   if (!shiftOpen.value) return toast('err', '请先开班再收银')
+  if (pending.value) return toast('warn', `上一笔 ${current.order.orderNo} 还在等待付款，请先处理完`)
   amountErr.value = ''
   let fen
   try {
@@ -96,23 +98,20 @@ async function create(codeType) {
     toast('err', e.message)
     return
   }
+  busy.value = true
   try {
     const res = await api('/cashier/orders', {
       method: 'POST',
-      body: {
-        amountFen: fen,
-        codeType,
-        clientRequestId: crypto.randomUUID(),
-        remark: remark.value,
-      },
+      body: { amountFen: fen, codeType, clientRequestId: crypto.randomUUID(), remark: remark.value },
     })
     current.order = res
     current.status = res.status
+    current.attempt = 0
     current.note = ''
     if (codeType === 'CASH') {
       toast('ok', `现金收款 ${fenToYuan(fen)} 元已入账`)
       beep('ok')
-      lastPaid.value = { orderNo: res.orderNo, at: new Date().toLocaleTimeString('zh-CN', { hour12: false }) }
+      lastPaid.value = { orderNo: res.orderNo, at: formatTime(new Date().toISOString(), { withSeconds: true }) }
       amountText.value = ''
       remark.value = ''
       current.order = null
@@ -123,7 +122,17 @@ async function create(codeType) {
   } catch (e) {
     toast('err', e.message)
     beep('err')
+  } finally {
+    busy.value = false
   }
+}
+
+function cancelPending() {
+  stopPoll()
+  current.order = null
+  current.status = ''
+  current.note = ''
+  toast('warn', '已停止查单，订单超时后会自动关单；若顾客已付款，会进待处理')
 }
 
 async function mockChannel(kind) {
@@ -137,7 +146,7 @@ async function mockChannel(kind) {
 }
 
 function onKey(e) {
-  if (e.target.tagName === 'INPUT' && e.target.type !== 'password') return
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
   const map = { F2: 'WECHAT', F3: 'ALIPAY', F4: 'CASH' }
   if (map[e.key]) {
     e.preventDefault()
@@ -145,7 +154,14 @@ function onKey(e) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKey))
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  refreshSummary()
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  stopPoll()
+})
 </script>
 
 <template>
@@ -156,7 +172,7 @@ onMounted(() => window.addEventListener('keydown', onKey))
           <h2>收款金额</h2>
           <span class="kbd">F2 微信 · F3 支付宝 · F4 现金</span>
         </div>
-        <div class="amount-display">￥{{ amountText || '0' }}</div>
+        <div class="amount-display" :class="{ 'amount-empty': !amountText }">￥{{ amountText || '0.00' }}</div>
         <div v-if="amountErr" class="err">{{ amountErr }}</div>
         <div class="keypad">
           <button v-for="k in ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '←']" :key="k" class="btn-key" @click="pressKey(k)">
@@ -170,9 +186,9 @@ onMounted(() => window.addEventListener('keydown', onKey))
           <input v-model="remark" maxlength="200" placeholder="如：堂食 / 老顾客" />
         </div>
         <div class="grid grid-2 gap-top" style="grid-template-columns: repeat(3, 1fr)">
-          <button class="btn-pay" :disabled="!shiftOpen" @click="create('WECHAT')">微信收款<span v-if="!shiftOpen" class="kbd" style="display:block;color:#6b7280">需先开班</span></button>
-          <button class="btn-pay" :disabled="!shiftOpen" @click="create('ALIPAY')">支付宝收款<span v-if="!shiftOpen" class="kbd" style="display:block;color:#6b7280">需先开班</span></button>
-          <button class="btn-pay btn-primary" :disabled="!shiftOpen" @click="create('CASH')">现金收款<span v-if="!shiftOpen" class="kbd" style="display:block;color:#6b7280">需先开班</span></button>
+          <button class="btn-pay" :disabled="!shiftOpen || busy || pending" @click="create('WECHAT')">微信收款</button>
+          <button class="btn-pay" :disabled="!shiftOpen || busy || pending" @click="create('ALIPAY')">支付宝收款</button>
+          <button class="btn-pay btn-primary" :disabled="!shiftOpen || busy || pending" @click="create('CASH')">现金收款</button>
         </div>
         <p v-if="!shiftOpen" class="err">当前未开班，先「开班 / 填备用金」才能收银。</p>
       </div>
@@ -184,10 +200,10 @@ onMounted(() => window.addEventListener('keydown', onKey))
         </div>
         <div class="row">
           <div class="qr-box">
-            <div class="qr-fake"></div>
+            <div class="qr-fake"><span class="qr-label">占位图</span></div>
             <div class="kbd mono">{{ current.order.orderNo }}</div>
           </div>
-          <div>
+          <div style="flex: 1">
             <div class="amount">￥{{ fenToYuan(current.order.amountFen) }}</div>
             <p class="muted">{{ CODE_TEXT[current.order.codeType] }}收款 · 已查询 {{ current.attempt }} 次</p>
             <p class="kbd">没有公网也能到账：系统按 3s/10s/30s/2min/5min 主动查单</p>
@@ -200,6 +216,9 @@ onMounted(() => window.addEventListener('keydown', onKey))
               </div>
             </div>
             <p v-if="current.note" class="err">{{ current.note }}</p>
+            <div class="row gap-top">
+              <button @click="cancelPending">停止查单</button>
+            </div>
           </div>
         </div>
       </div>
@@ -207,17 +226,20 @@ onMounted(() => window.addEventListener('keydown', onKey))
 
     <div>
       <div class="card">
-        <div class="card-title"><h2>本班实时</h2></div>
+        <div class="card-title">
+          <h2>本班实时</h2>
+          <span class="kbd">{{ shiftOpen ? '进行中' : '未开班' }}</span>
+        </div>
         <div class="grid grid-2">
-          <div class="stat"><div class="label">已到账笔数</div><div class="value">{{ state.summary?.paidCount ?? 0 }}</div></div>
-          <div class="stat"><div class="label">已到账金额</div><div class="value">{{ fenToYuan(state.summary?.paidFen ?? 0) }}</div></div>
-          <div class="stat"><div class="label">现金</div><div class="value">{{ fenToYuan(state.summary?.cashFen ?? 0) }}</div></div>
+          <div class="stat"><div class="label">已到账笔数</div><div class="value">{{ state.summary?.shiftPaidCount ?? 0 }}</div></div>
+          <div class="stat"><div class="label">已到账金额</div><div class="value">{{ fenToYuan(state.summary?.shiftPaidFen ?? 0) }}</div></div>
+          <div class="stat"><div class="label">现金</div><div class="value">{{ fenToYuan(state.summary?.shiftCashFen ?? 0) }}</div></div>
           <div class="stat"><div class="label">待处理</div><div class="value" :style="{ color: state.summary?.exceptionCount ? 'var(--danger)' : '' }">{{ state.summary?.exceptionCount ?? 0 }}</div></div>
         </div>
       </div>
       <div class="card">
         <h3>最近到账</h3>
-        <p v-if="!lastPaid" class="muted">今天还没有到账记录</p>
+        <p v-if="!lastPaid" class="muted">本班还没有到账记录</p>
         <div v-else class="row">
           <span class="badge b-PAID">已到账</span>
           <span class="mono kbd">{{ lastPaid.orderNo }}</span>

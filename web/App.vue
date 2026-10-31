@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { state, refreshMe, refreshSummary, api } from './store.js'
 
@@ -23,6 +23,7 @@ const navItems = computed(() => {
 async function logout() {
   await api('/auth/logout', { method: 'POST' })
   state.me = null
+  state.summary = null
   router.push('/login')
 }
 
@@ -36,6 +37,18 @@ onMounted(async () => {
     }
   }
 })
+
+watch(
+  () => route.path,
+  async () => {
+    if (bare.value) return
+    try {
+      await refreshSummary()
+    } catch {
+      /* 网络异常时保留上一次数据 */
+    }
+  },
+)
 </script>
 
 <template>
@@ -50,7 +63,7 @@ onMounted(async () => {
       <span v-if="state.summary?.seed" class="kbd">演示数据 · 未接真实商户号</span>
       <span class="kbd">
         {{ state.me?.username || '—' }} · {{ state.me?.role === 'OWNER' ? '店主' : '店员' }} ·
-        班次 {{ state.me?.shiftId ? '当班中' : '未开' }}
+        班次 {{ state.summary?.shiftOpen ? '当班中' : '未开' }}
       </span>
       <button @click="logout">登出</button>
     </header>

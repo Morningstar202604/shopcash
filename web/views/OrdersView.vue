@@ -1,7 +1,10 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { api, toast, STATUS_TEXT, CODE_TEXT, EXCEPTION_TEXT } from '../store.js'
+import { toCsv, formatDateTime, fenToYuan } from '@shopcash/shared'
 
+const router = useRouter()
 const q = reactive({ status: '', kw: '', page: 1, pageSize: 20 })
 const rows = ref([])
 const total = ref(0)
@@ -24,37 +27,46 @@ async function load() {
 }
 
 async function open(row) {
-  detail.value = await api(`/orders/${row.orderNo}`)
-}
-
-async function resolve(orderNo, action) {
   try {
-    await api(`/exceptions/${orderNo}/resolve`, { method: 'POST', body: { action, note: '界面演示处理' } })
-    toast('ok', action === 'RECORD_IN' ? '已补录为到账' : '已作废')
-    detail.value = null
-    await load()
+    detail.value = await api(`/orders/${row.orderNo}`)
   } catch (e) {
     toast('err', e.message)
   }
 }
 
+function gotoResolve(orderNo) {
+  detail.value = null
+  router.push({ path: '/exceptions', query: { orderNo } })
+}
+
 async function exportCsv() {
-  const d = await api(`/orders?status=${q.status}&kw=${encodeURIComponent(q.kw)}&page=1&pageSize=100000`)
-  const head = ['订单号', '金额(元)', '方式', '状态', '异常原因', '渠道单号', '备注', '创建时间']
-  const lines = d.rows.map((o) =>
-    [o.orderNo, (o.amountFen / 100).toFixed(2), CODE_TEXT[o.codeType], STATUS_TEXT[o.status], o.exceptionReason || '', o.channelOrderNo || '', o.remark || '', o.createdAt].join(','),
-  )
-  const blob = new Blob(['\ufeff' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(a.href)
-  toast('ok', `已导出 ${d.rows.length} 笔`)
+  try {
+    const d = await api(`/orders?status=${q.status}&kw=${encodeURIComponent(q.kw)}&page=1&pageSize=100000`)
+    const head = ['订单号', '金额(元)', '方式', '状态', '异常原因', '渠道单号', '备注', '创建时间']
+    const lines = d.rows.map((o) => [
+      o.orderNo,
+      money(o.amountFen),
+      CODE_TEXT[o.codeType] || o.codeType,
+      STATUS_TEXT[o.status] || o.status,
+      o.exceptionReason ? EXCEPTION_TEXT[o.exceptionReason] || o.exceptionReason : '',
+      o.channelOrderNo || '',
+      o.remark || '',
+      formatDateTime(o.createdAt, { withSeconds: true }),
+    ])
+    const blob = new Blob([toCsv(head, lines)], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast('ok', `已导出 ${d.rows.length} 笔`)
+  } catch (e) {
+    toast('err', e.message)
+  }
 }
 
 function money(fen) {
-  return (fen / 100).toFixed(2)
+  return fen === undefined || fen === null ? '—' : fenToYuan(fen)
 }
 
 onMounted(load)
@@ -90,13 +102,13 @@ onMounted(load)
           <tr v-for="o in rows" :key="o.orderNo" class="clickable" @click="open(o)">
             <td class="mono">{{ o.orderNo }}</td>
             <td class="mono right">￥{{ money(o.amountFen) }}</td>
-            <td>{{ CODE_TEXT[o.codeType] }}</td>
+            <td>{{ CODE_TEXT[o.codeType] || o.codeType }}</td>
             <td>
-              <span class="badge" :class="`b-${o.status}`">{{ STATUS_TEXT[o.status] }}</span>
+              <span class="badge" :class="`b-${o.status}`">{{ STATUS_TEXT[o.status] || o.status }}</span>
               <span v-if="o.exceptionReason" class="kbd"> {{ EXCEPTION_TEXT[o.exceptionReason] || o.exceptionReason }}</span>
             </td>
             <td class="mono kbd">{{ o.channelOrderNo || '—' }}</td>
-            <td class="kbd">{{ o.createdAt.slice(11, 19) }}</td>
+            <td class="kbd">{{ formatDateTime(o.createdAt) }}</td>
             <td><button @click.stop="open(o)">查看详情</button></td>
           </tr>
         </tbody>
@@ -119,25 +131,27 @@ onMounted(load)
         <div>
           <p><span class="muted">订单号</span><br /><span class="mono">{{ detail.orderNo }}</span></p>
           <p><span class="muted">金额</span><br /><span class="amount">￥{{ money(detail.amountFen) }}</span></p>
-          <p><span class="muted">状态</span><br /><span class="badge" :class="`b-${detail.status}`">{{ STATUS_TEXT[detail.status] }}</span></p>
+          <p><span class="muted">状态</span><br /><span class="badge" :class="`b-${detail.status}`">{{ STATUS_TEXT[detail.status] || detail.status }}</span></p>
+          <p><span class="muted">下单时间</span><br /><span class="kbd">{{ formatDateTime(detail.createdAt, { withSeconds: true }) }}</span></p>
         </div>
         <div>
           <p v-if="detail.exceptionReason"><span class="muted">异常原因</span><br />{{ EXCEPTION_TEXT[detail.exceptionReason] || detail.exceptionReason }}</p>
           <p v-if="detail.remark"><span class="muted">备注</span><br />{{ detail.remark }}</p>
+          <p v-if="detail.channelOrderNo"><span class="muted">渠道单号</span><br /><span class="mono kbd">{{ detail.channelOrderNo }}</span></p>
         </div>
       </div>
       <h3>状态流转</h3>
       <ul class="timeline">
         <li v-for="e in detail.events" :key="e.id">
-          <span class="t">{{ e.createdAt.slice(11, 19) }}</span>
-          <span class="badge" :class="`b-${e.toStatus}`">{{ STATUS_TEXT[e.toStatus] }}</span>
+          <span class="t">{{ formatDateTime(e.createdAt, { withSeconds: true }) }}</span>
+          <span class="badge" :class="`b-${e.toStatus}`">{{ STATUS_TEXT[e.toStatus] || e.toStatus }}</span>
           <span class="kbd">{{ e.source }}</span>
           <div class="muted">{{ e.note }}</div>
         </li>
       </ul>
       <div v-if="detail.status === 'EXCEPTION'" class="row gap-top">
-        <button class="btn-primary" @click="resolve(detail.orderNo, 'RECORD_IN')">确已收款，补录入账</button>
-        <button class="btn-danger" @click="resolve(detail.orderNo, 'IGNORE')">确认未收款，作废</button>
+        <button class="btn-primary" @click="gotoResolve(detail.orderNo)">去待处理工作台结案</button>
+        <span class="kbd">结案需要店主口令二次确认，统一在「待处理」页面完成</span>
       </div>
     </div>
   </div>

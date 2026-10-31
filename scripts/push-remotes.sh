@@ -73,10 +73,10 @@ gh_push () { # $1=用户 $2=令牌
 gitee_push () {
   echo "== gitee/badhope"
   local t=$1 code
-  code=$(curl -s -m 30 -o /dev/null -w "%{http_code}" "https://gitee.com/api/v5/user?access_token=***")
+  code=$(curl -s -m 30 -o /dev/null -w "%{http_code}" "https://gitee.com/api/v5/user?access_token=$t")
   if [ "$code" != "200" ]; then echo "   令牌不可用（HTTP $code）——需要在 Gitee「设置→私人令牌」重新生成并勾选 projects 权限"; rc=1; return; fi
   [ "$CHECK_ONLY" = "1" ] && { echo "   令牌可用，跳过写操作"; return; }
-  curl -s -m 30 -o /dev/null "https://gitee.com/api/v5/repos/badhope/$REPO?access_token=***"
+  code=$(curl -s -m 30 -o /dev/null -w "%{http_code}" "https://gitee.com/api/v5/repos/badhope/$REPO?access_token=$t")
   if [ "$code" != "200" ]; then
     code=$(curl -s -m 60 -o /tmp/gitee_create.json -w "%{http_code}" -X POST "https://gitee.com/api/v5/user/repos" \
       -d "access_token=$t&name=$REPO&description=$DESC&private=false&issues=true")
@@ -91,7 +91,7 @@ gitee_push () {
 gitcode_push () {
   echo "== gitcode/badhope"
   local t=$1 code
-  code=$(curl -s -m 30 -o /dev/null -w "%{http_code}" -X POST "https://gitcode.com/api/v5/user/repos?private_token=***" -H 'content-type: application/json' -d '{"name":"__probe__"}')
+  code=$(curl -s -m 30 -o /dev/null -w "%{http_code}" "https://api.gitcode.com/api/v5/user" -H "PRIVATE-TOKEN: $t")
   if [ "$code" = "401" ]; then echo "   令牌不可用（GitCode 返回 token not found）——需要在「个人设置→访问令牌」重新生成"; rc=1; return; fi
   [ "$CHECK_ONLY" = "1" ] && { echo "   令牌可达（HTTP $code），跳过写操作"; return; }
   local out

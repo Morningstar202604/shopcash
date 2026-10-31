@@ -1,9 +1,9 @@
 {
   "name": "shopcash",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "店收宝 ShopCash — 单机门店收银与收款记账软件（钱只进商家自己的微信/支付宝商户号，软件零资金介入）",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "lint": "tsc --noEmit",
     "test": "jest",
