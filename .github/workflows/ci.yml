@@ -25,6 +25,9 @@ jobs:
       - name: 类型检查
         run: npm run lint
 
+      - name: Vue 模板绑定自检（tsc 不覆盖 .vue）
+        run: npm run check:vue
+
       - name: 内核单测（含覆盖率门槛 90%）
         run: npm test -- --coverage
 
@@ -36,7 +39,7 @@ jobs:
 
       # 关键：服务与两项端到端检查必须在同一个 step 内，
       # GitHub Actions 每个 step 是独立 shell，跨 step 的后台进程不会存活
-      - name: 端到端自检（15 项资金/权限规则 + 18 步界面实跑）
+      - name: 端到端自检（24 项资金/权限规则 + 20 步界面实跑）
         run: |
           set -e
           npx vite --host 127.0.0.1 --port 5199 > /tmp/vite.log 2>&1 &

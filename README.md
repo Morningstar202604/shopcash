@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/badhope/shopcash/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/shopcash/actions/workflows/ci.yml)
 ![单测](https://img.shields.io/badge/%E5%8D%95%E6%B5%8B-55%20%E5%85%A8%E8%BF%87-0FA968)
-![覆盖率](https://img.shields.io/badge/%E8%A6%86%E7%9B%96%E7%8E%87-100%25-0FA968)
+![覆盖率](https://img.shields.io/badge/%E8%AF%AD%E5%8F%A5%2F%E8%A1%8C-100%25-C0CA33)
 ![资金规则](https://img.shields.io/badge/%E7%A1%AC%E8%A7%84%E5%88%99%E5%88%B0%E7%AB%AF%E5%88%B0%E7%AB%AF-24%2F24-0FA968)
 ![界面自检](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2%E5%AE%9E%E8%B7%91-20%20%E6%AD%A5%C2%B7%E9%9B%B6%E6%8A%A5%E9%94%99-0FA968)
 ![零资金介入](https://img.shields.io/badge/%E8%B5%84%E9%87%91%E9%93%BE%E8%B7%AF-%E8%BD%AF%E4%BB%B6%E4%B8%8D%E7%A2%B0%E9%92%B1-1F2328)
@@ -74,17 +74,18 @@
 
 ```bash
 npm ci            # prepare 钩子会自动编译 packages/shared 产出 ESM，无需手动 build
-npm run verify    # = lint + 单测 + 前端构建
+npm run verify    # = lint + 模板绑定自检 + 单测 + 前端构建
 npm run dev       # 本机界面 + 开发期 mock API：http://127.0.0.1:5199
 ```
 
-自检命令（改资金逻辑必须四条全绿才算完成）：
+自检命令（改资金逻辑必须以下全绿才算完成）：
 
 ```bash
 npm run test:cov      # 内核单测 + 覆盖率门槛 90%
 npm run test:api      # 24 项资金/权限/会话硬规则端到端检查
 npm run test:ui       # 20 步界面实跑 + 逐页截图 + 控制台错误采集
 npm run lint          # tsc --noEmit（覆盖 packages/**/*.ts）
+npm run check:vue     # .vue 模板绑定自检（tsc 不覆盖 .vue，漏 import 会静默空态）
 ```
 
 演示口令（仅开发期 mock 服务，生产不存在默认口令）：店主 `owner / Shop2026test`，店员 `staff / Staff2026test`。
@@ -95,8 +96,8 @@ npm run lint          # tsc --noEmit（覆盖 packages/**/*.ts）
 packages/shared/   金额换算 + 订单状态机 + 口令策略 + 时间格式化 + CSV + 查单退避（唯一真相源，编译出 ESM 给前端与 mock 复用）
 web/               Vue 3 收银界面
 tools/             mock-server.js —— 仅开发期使用的接口桩
-scripts/           ui-check.mjs（界面实跑）、api-rules-check.mjs（规则端到端）、push-remotes.sh
-docs/              店收宝-PRD-v1.md、设计定稿、screenshots/
+scripts/           ui-check.mjs（界面实跑）、api-rules-check.mjs（规则端到端）、vue-bindings-check.mjs（模板绑定）、push-remotes.sh
+docs/              店收宝-PRD-v1.md、设计定稿、api-schema.md（当前开发桩接口）、screenshots/
 ```
 
 ## 架构要点

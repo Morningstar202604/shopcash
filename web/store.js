@@ -1,5 +1,4 @@
 import { reactive } from 'vue'
-import { fenToYuan } from '@shopcash/shared'
 
 export const STATUS_TEXT = {
   PENDING: '待支付',
@@ -67,10 +66,6 @@ export async function refreshSummary() {
     state.banner = { level: 'warn', text: `${state.summary.exceptionCount} 笔订单待人工处理，请今天结案` }
   else state.banner = null
   return state.summary
-}
-
-export function yuan(fen) {
-  return fenToYuan(fen ?? 0)
 }
 
 /** 提示音：到账 / 异常 / 失败（Web Audio，不依赖任何资源文件） */

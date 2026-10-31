@@ -19,6 +19,9 @@
 - 渠道凭据保存只回显掩码（`mask()`），保存后清空表单；`/users` 不再返回口令字段
 - 修掉 `main.js` 中指向不存在的 `/change-password` 路由导致的白屏
 - 修掉 `ui-check.mjs` 的 `delete opt._pw` 写法，浏览器探测逻辑恢复可读
+- 新增 `scripts/vue-bindings-check.mjs` + `npm run check:vue`，并接入 `verify` 与 CI：扫描 .vue 模板表达式，兜住「漏 import 导致页面静默空态」这类 tsc 抓不到的问题（本轮实际抓到并修掉一次）
+- 清掉死代码：`web/store.js` 未使用的 `yuan()` 与 `fenToYuan` 导入、`tools/mock-server.js` 未使用的 `seg`
+- CI 步骤名同步为「24 项资金/权限规则 + 20 步界面实跑」，并新增模板绑定自检步骤
 
 **文档与一致性**
 - README 功能现状重写：区分「已实现并通过自动化验证」与「仅开发桩、尚未落地真实后端」，删除审计链/备份/对账等超前表述

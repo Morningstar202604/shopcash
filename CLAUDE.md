@@ -4,7 +4,7 @@
 
 ## 当前进度（2026-10-31）
 
-已完成：金额/状态机内核、口令策略、时间格式化、CSV、查单退避（55 单测、100% 覆盖）、Vue 八屏、开发桩接口（24 项端到端断言）、20 步界面实跑。
+已完成：金额/状态机内核、口令策略、时间格式化、CSV、查单退避（55 单测、语句/行 100% 覆盖）、Vue 八屏、开发桩接口（24 项端到端断言）、20 步界面实跑。
 
 未开始：`apps/sidecar`（NestJS）、`apps/shell`（Tauri）、Prisma 迁移与 SQLite 落库、真实微信/支付宝渠道、退款、审计哈希链、备份恢复、诊断包、每日对账。**当前数据全在内存，重启即回演示态。** 已知偏差清单见 PRD 19.1。
 
@@ -22,16 +22,17 @@
 ```bash
 npm ci                 # prepare 钩子自动编译 packages/shared，勿手动先 build
 npm run dev            # 本机界面 + 开发期 mock API（127.0.0.1:5199）
-npm run lint           # tsc --noEmit
+npm run lint           # tsc --noEmit（只覆盖 packages/**/*.ts）
+npm run check:vue      # .vue 模板绑定自检（漏 import 会静默空态）
 npm test               # 内核单测（Jest，CI 固定 NODE_ENV=test）
 npm run test:cov       # 覆盖率门槛 90%
 npm run test:api       # 24 项资金/权限/会话硬规则端到端断言
 npm run test:ui        # 20 步界面实跑 + 逐页截图 + 控制台错误采集
-npm run verify         # lint + test + build，提交前必跑
+npm run verify         # lint + check:vue + test + build，提交前必跑
 npx prisma migrate dev --name <变更名>     # W1 落地后使用；禁止 db push
 ```
 
-**提交前必须四项全绿**：`lint`、`test`、`test:api`、`test:ui`（截图有新变化时同步更新 `docs/screenshots/`）。
+**提交前必须五项全绿**：`lint`、`check:vue`、`test`、`test:api`、`test:ui`（截图有新变化时同步更新 `docs/screenshots/`）。
 
 ## 目录
 

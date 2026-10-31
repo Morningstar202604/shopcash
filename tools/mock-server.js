@@ -203,7 +203,6 @@ export function reseedOrders(db) {
 export function handle(db, method, rawUrl, body) {
   const url = new URL(rawUrl, 'http://mock')
   const p = url.pathname.replace(/^\/api/, '') || '/'
-  const seg = p.split('/').filter(Boolean)
   const iso = () => new Date().toISOString()
   const J = (code, data) => ({ status: code, body: { code: 0, message: 'ok', traceId: `t_${Math.random().toString(36).slice(2, 10)}`, data } })
   const E = (http, errCode, message) => ({ status: http, body: { code: errCode, message, traceId: `t_${Math.random().toString(36).slice(2, 10)}`, data: null } })

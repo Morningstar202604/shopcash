@@ -6,6 +6,7 @@
   "license": "MIT",
   "scripts": {
     "lint": "tsc --noEmit",
+    "check:vue": "node scripts/vue-bindings-check.mjs",
     "test": "jest",
     "test:cov": "jest --coverage",
     "dev": "vite --host 127.0.0.1 --port 5199",
@@ -15,9 +16,9 @@
     "build:shared": "tsc -p packages/shared/tsconfig.json",
     "test:ui:build": "npm run build && npm run preview -- --port 5199 & sleep 6; node scripts/ui-check.mjs",
     "prepare": "npm run build:shared",
-    "verify": "npm run lint && npm test && npm run build",
+    "verify": "npm run lint && npm run check:vue && npm test && npm run build",
     "test:api": "node scripts/api-rules-check.mjs",
-    "check": "npm run lint && npm test && npm run build"
+    "check": "npm run lint && npm run check:vue && npm test && npm run build"
   },
   "devDependencies": {
     "@types/jest": "30.0.0",
