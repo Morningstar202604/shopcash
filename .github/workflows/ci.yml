@@ -9,7 +9,8 @@ on:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    # Playwright 1.53 尚不支持 ubuntu-26.04，暂钉 24.04；升级 Playwright 后可改回 ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
