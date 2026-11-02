@@ -1,18 +1,12 @@
 # 店收宝 ShopCash
 
-**单机门店收银与收款记账软件**：一个 Windows 便携目录，双击即用，数据全部落在本机 SQLite。
-收款直接进入**本店自己申请的微信/支付宝商户号**，T+1 由渠道自动提现到本店银行卡——
-**本软件不持有、不归集、不转发任何资金**。
+**门店收银与记账项目（开发与实验阶段）**。界面使用内存 mock API；另有独立的 Node.js + SQLite 实验后端，尚未确认与前端联调，均不可用于生产或真实收款。
 
-`NestJS 11` · `TypeScript` · `Prisma 6 + SQLite(WAL)` · `Vue 3.5` · `Tauri 2` · `Node 22 LTS`
+目标是商户直接使用自己的支付渠道，软件不持有、不归集、不转发资金；真实微信/支付宝支付与 Windows便携包尚未接入或交付。
+
+`TypeScript` · `Vue3.5` · `Node.js` · `SQLite（实验后端）`
 
 [![CI](https://github.com/badhope/shopcash/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/shopcash/actions/workflows/ci.yml)
-![单测](https://img.shields.io/badge/%E5%8D%95%E6%B5%8B-55%20%E5%85%A8%E8%BF%87-0FA968)
-![覆盖率](https://img.shields.io/badge/%E8%AF%AD%E5%8F%A5%2F%E8%A1%8C-100%25-C0CA33)
-![资金规则](https://img.shields.io/badge/%E7%A1%AC%E8%A7%84%E5%88%99%E5%88%B0%E7%AB%AF%E5%88%B0%E7%AB%AF-24%2F24-0FA968)
-![界面自检](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2%E5%AE%9E%E8%B7%91-20%20%E6%AD%A5%C2%B7%E9%9B%B6%E6%8A%A5%E9%94%99-0FA968)
-![零资金介入](https://img.shields.io/badge/%E8%B5%84%E9%87%91%E9%93%BE%E8%B7%AF-%E8%BD%AF%E4%BB%B6%E4%B8%8D%E7%A2%B0%E9%92%B1-1F2328)
-
 > 中文 · [English below](#english-overview)
 
 <p align="center">
@@ -29,8 +23,7 @@
 
 ## 界面实拍
 
-以下截图由 Playwright 驱动 Chromium **实跑主流程**产生（`npm run test:ui`，CI 每次构建都会跑并把截图归档成制品），不是设计稿、不是摆拍。
-20 张截图覆盖：首启向导空态与弱口令拦截、小键盘录入、收款码等待、到账翻转、金额不符、0 元拒绝、订单簿与状态时间线、异常结案二次确认、班次交接、总览、渠道自检、店员权限边界。
+以下为仓库中已有的开发期截图，不代表当前版本已经验证或具备真实收款能力。截图展示：首启向导空态与弱口令拦截、小键盘录入、收款码等待、到账翻转、金额不符、0 元拒绝、订单簿与状态时间线、异常结案二次确认、班次交接、总览、渠道自检、店员权限边界。
 
 | 首启向导（弱口令被拦） | 收银台·金额录入 | 等待顾客付款 | 订单簿 |
 |---|---|---|---|
@@ -42,9 +35,9 @@
 
 ## 功能现状
 
-**已实现并通过自动化验证**
+**开发期界面与内存 mock 的功能（不代表生产能力）**
 
-- 首启向导：无默认口令，`checkPassword()` 统一校验长度 / 大小写 / 数字 / 非用户名 / 弱口令表（`ChangeAdmin2026`、`Admin@2026` 等 10 条，含子串变体）
+- 首启向导：初始化时使用 `checkPassword()` 统一校验长度 / 大小写 / 数字 / 非用户名 / 弱口令表（`ChangeAdmin2026`、`Admin@2026` 等 10 条，含子串变体）
 - 收银台：小键盘录入、`F2` 微信 / `F3` 支付宝 / `F4` 现金、到账状态实时翻转与提示音、待付款时禁止重复下单、可停止查单
 - 订单状态机 `PENDING → PAYING → PAID → REFUNDING → REFUNDED`，另有 `CLOSED` 与 `EXCEPTION`
 - 主动查单退避：3s/10s/30s/2min/5min，之后每 5min 一次，到 `orderExpireMinutes`（默认 15 分钟）关单
@@ -53,20 +46,21 @@
 - 员工分账号与权限分级（店主 / 店员），订单、总览、异常、渠道的数据范围过滤全在服务端
 - 待人工处理工作台：金额不符、迟到成功等异常必须店主输入口令二次确认后才可补录 / 作废
 - 渠道配置中心：mock / 微信 / 支付宝三套凭据表单 + 配置自检 + 店主口令二次确认 + 只回显掩码
-- 开发期一键接口自检（24 项断言）与界面实跑（20 步、零控制台报错）
+- 提供开发期 mock 接口与界面自检脚本；测试范围和当前结果见下文
 
-**仅开发桩、尚未落地真实后端**：NestJS sidecar、Prisma/SQLite 迁移、Tauri 壳、真实微信/支付宝渠道、退款、
-审计哈希链、备份恢复、诊断信息包、每日对账。开发期数据在内存里，进程重启即回到演示数据。
+**独立实验后端**：`server/` 使用 Node.js 内置 HTTP 与 `node:sqlite`，包含 SQLite 持久化、会话、门店、订单、班次、退款申请、审批入口及审计链等实验接口；退款申请创建、审批和结算不可用；已有退款记录不会被清理，真实支付渠道未接入。它不是 NestJS/Prisma 实现，也未确认与前端联调。
 
-**尚未实现（V2 路线）**：商品库与扫码枪、小票打印、多门店集中管理、对外开放 API、AI 查账助手、服务商进件与分账。
+**未交付生产能力**：NestJS sidecar、Prisma迁移、Tauri 壳、真实渠道、真实退款结算、备份恢复、诊断信息包及每日对账。mock 数据保存在内存中，重启后重置。
+
+**尚未实现（V2 路线）**：商品库与扫码枪、小票打印、生产级多门店集中管理、生产级对外开放 API、AI 查账助手、服务商进件与分账。
 
 ## 三条不能绕过的资金硬规则
 
-写在 `packages/shared/src/order-state.ts`，纯函数、可穷举测试，前后端与 mock 复用同一份实现：
+写在 `packages/shared/src/order-state.ts`，前两条由纯函数表达；第三条是持久化层的设计要求，前后端与 mock 复用同一份实现：
 
 1. **金额强校验**：渠道实付金额必须与订单金额完全相等才允许置 `PAID`；不等或渠道未返回金额 → `EXCEPTION(AMOUNT_MISMATCH)`
 2. **迟到的成功只进人工**：已 `CLOSED` 的订单事后查到支付成功 → `EXCEPTION(LATE_SUCCESS)`，绝不自动入账
-3. **条件原子更新**：所有状态推进必须 `UPDATE ... WHERE id = ? AND status IN (...)`，0 行即并发冲突
+3. **条件原子更新（设计要求）**：状态推进应使用带原状态条件的更新，并处理并发冲突；现有实验实现不应视为已全面验证此要求
 
 金额口径同样锁死：全链路以「分」为整数存储，元只在出入参与界面出现；超过两位小数**直接拒绝**，不做四舍五入。
 
@@ -74,9 +68,21 @@
 
 ```bash
 npm ci            # prepare 钩子会自动编译 packages/shared 产出 ESM，无需手动 build
-npm run verify    # = lint + 模板绑定自检 + 单测 + 前端构建
+npm run verify # lint、模板绑定、单测、隔离及安全回归、前端构建
 npm run dev       # 本机界面 + 开发期 mock API：http://127.0.0.1:5199
 ```
+
+### 独立实验后端（仅本地开发）
+
+在仓库根目录先执行 `npm ci`，其 `prepare` 会编译 `@shopcash/shared`。实验后端使用 `node:sqlite`，需要支持该内置模块的 Node.js版本（Node22.5.0及以上）；部分 Node版本可能发出实验性提示。确保默认端口5400 未被占用，数据库目录可写，然后执行：
+
+```bash
+node server/index.mjs
+```
+
+默认监听 `127.0.0.1:5400`，SQLite 文件为相对于当前工作目录的 `data/shopcash.db`，启动时自动建表。可用环境变量 `HOST`、`PORT`、`DB_FILE` 覆盖；不要把服务暴露到公网，不要存放真实凭据或生产数据。默认不导入演示数据；设置 `SEED_DEMO=1` 时仅在数据库尚无机构时导入演示账号。未启用种子时需通过初始化接口创建机构与店主。
+
+该服务仅提供 API，不托管界面；`npm run dev`仍使用 Vite 内存 mock，而非此后端。实验后端没有完成真实支付或退款结算，渠道凭据只记录掩码、不保存实际凭据；审计链和其他实验功能不等于生产安全保障。`.env.example` 中的 `SHOPCASH_*`变量不是此入口使用的配置。
 
 自检命令（改资金逻辑必须以下全绿才算完成）：
 
@@ -88,12 +94,17 @@ npm run lint          # tsc --noEmit（覆盖 packages/**/*.ts）
 npm run check:vue     # .vue 模板绑定自检（tsc 不覆盖 .vue，漏 import 会静默空态）
 ```
 
-演示口令（仅开发期 mock 服务，生产不存在默认口令）：店主 `owner / Shop2026test`，店员 `staff / Staff2026test`。
+`verify` 不包含 `test:api`、`test:ui`、`test:cov` 或 `server/*.test.mjs`；后端测试可单独运行 `node --test server/*.test.mjs`，它们覆盖部分路由与 HTTP 流程，不证明生产安全或前后端联调。API/UI 自检各自启动并关闭随机端口上的独立内存 mock 服务，不使用既有5199 服务；设置 `BASE` 或内部目标变量会被入口拒绝，不能指定既有服务。请使用上述 npm入口，勿直接运行测试脚本。`npm run test:ui:build`先构建再使用隔离预览服务；截图可用 `SHOTS_DIR` 指定目录。`npm run test:isolation` 检查隔离目标守卫。
+
+普通 mock 启动不启用重置接口，返回404；隔离测试进程设置 `SHOPCASH_ISOLATION_TOKEN` 时才开放，`?setup=0` 清空 mock 数据并恢复未初始化状态。该开关是进程环境变量，不是请求鉴权，不应视为安全边界。实验 SQLite 后端没有重置接口。
+
+演示口令（开发期 mock 服务；实验后端仅在显式启用演示种子时使用）：店主 `owner / Shop2026test`，店员 `staff / Staff2026test`。
 
 ## 目录结构
 
 ```
 packages/shared/   金额换算 + 订单状态机 + 口令策略 + 时间格式化 + CSV + 查单退避（唯一真相源，编译出 ESM 给前端与 mock 复用）
+server/            独立实验 HTTP + SQLite 后端，非生产、未确认前后端联调
 web/               Vue 3 收银界面
 tools/             mock-server.js —— 仅开发期使用的接口桩
 scripts/           ui-check.mjs（界面实跑）、api-rules-check.mjs（规则端到端）、vue-bindings-check.mjs（模板绑定）、push-remotes.sh
@@ -103,20 +114,16 @@ docs/              店收宝-PRD-v1.md、设计定稿、api-schema.md（当前�
 ## 架构要点
 
 - **当前可运行形态**：Vite 开发服务器把 `tools/mock-server.js` 挂成 `/api` 中间件，界面与接口同源，数据在内存
+- **独立实验后端**：Node.js HTTP + `node:sqlite`，不由 Vite代理，不能据此认定已与界面联调
 - **生产目标形态（未实现）**：Tauri(Rust) 壳 → NestJS sidecar（仅听 127.0.0.1）→ Prisma + SQLite(WAL)
-- **只绑 `127.0.0.1`**，无公网监听端口，无 Redis、无 Docker、无云服务器
-- **并发控制设计**：进程内 Mutex（订单号粒度）→ SQLite 事务 → 条件原子更新 → 唯一约束幂等
+- **默认监听**：开发界面和实验后端默认绑定 `127.0.0.1`；实验后端的 `HOST` 可覆盖，勿暴露到公网
+- **目标并发控制设计（非完整实现承诺）**：进程内 Mutex（订单号粒度）→ SQLite 事务 → 条件原子更新 → 唯一约束幂等
 - **金额口径**：全链路整数分；元↔分只走 `yuanToFen()` / `fenToYuan()`，超出两位小数直接拒绝
 - **凭据处理**：界面只回显掩码；真实 AES-256-GCM 落库随真实后端交付
 
 ## English Overview
 
-ShopCash is a **single-store, self-hosted POS and payment ledger** for Windows. Money goes straight into the
-merchant's own WeChat Pay / Alipay direct merchant account; the software never holds, aggregates, or settles funds.
-It was redesigned after a security review of KeBaiPay, whose data model (one platform-level merchant number, no
-sub-merchant onboarding, no settlement path) would have amounted to unlicensed second-clearing if operated for
-multiple merchants. Built with NestJS 11 + Prisma 6 + SQLite (WAL) inside a Tauri shell, with a money-as-integer-fen
-policy, a hard payment state machine, and three-layer reconciliation (callback → active query polling → daily bill).
+ShopCash is an experimental POS and ledger project, not production-ready and not connected to real payment providers. The Vue development UI uses an in-memory mock API. A separate Node.js HTTP + SQLite experimental backend exists; frontend integration has not been established. A Windows/Tauri package, real payment and refund settlement remain future work.
 
 ## 开发与交付约束
 

@@ -1,9 +1,10 @@
 /**
  * 资金硬规则端到端自检（对着真实 HTTP 接口跑，不是单元测试里的假数据）
- * 用法：先 `npm run dev`（或本脚本自行假定 5199 已就绪），再 `node scripts/api-rules-check.mjs`
+ * 用法：npm run test:api
  * 覆盖 PRD 5.3 三条硬规则 + PRD 3.1/3.2 角色与数据范围 + 金额 fail-closed + 会话/班次一致性
  */
-const BASE = process.env.BASE || 'http://127.0.0.1:5199'
+import { isolatedTarget } from './test-target.mjs'
+const BASE = await isolatedTarget()
 
 const call = async (path, opt) => {
   const res = await fetch(BASE + path, {

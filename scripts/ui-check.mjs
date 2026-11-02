@@ -14,7 +14,8 @@ CANDIDATES.push({ label: '系统 chrome 通道', opt: { channel: 'chrome' } })
 for (const p of ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
   if (existsSync(p)) CANDIDATES.push({ label: p, opt: { executablePath: p } })
 }
-const BASE = 'http://127.0.0.1:5199'
+const { isolatedTarget } = await import('./test-target.mjs')
+const BASE = await isolatedTarget()
 const OUT = process.env.SHOTS_DIR || '/tmp/shots'
 fs.mkdirSync(OUT, { recursive: true })
 
@@ -42,6 +43,7 @@ async function launchBrowser() {
 }
 
 const browser = await launchBrowser()
+try {
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' })
 const page = await ctx.newPage()
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
@@ -176,7 +178,9 @@ await p2.goto(`${BASE}/exceptions`)
 await p2.waitForTimeout(800)
 await shot(p2, '17-staff-redirect')
 
-await browser.close()
+} finally {
+ await browser.close()
+}
 
 console.log('shots:', shots.length, shots.join(','))
 console.log('errors:', errors.length ? errors.join('\n') : 'none')

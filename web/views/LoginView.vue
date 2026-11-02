@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { api, toast, refreshMe, refreshSummary } from '../store.js'
+import { api, setToken, refreshMe, refreshSummary } from '../store.js'
 
 const router = useRouter()
 const form = reactive({ username: 'owner', password: '' })
@@ -13,8 +13,10 @@ async function submit() {
   if (!form.username || !form.password) return (err.value = '请输入登录名与口令')
   busy.value = true
   try {
-    await api('/auth/login', { method: 'POST', body: { username: form.username, password: form.password } })
-    await refreshMe()
+ const result = await api('/auth/login', { method: 'POST', body: { username: form.username, password: form.password } })
+ if (!result?.token) throw new Error('登录响应缺少会话令牌')
+ setToken(result.token)
+ await refreshMe()
     await refreshSummary()
     router.push('/cashier')
   } catch (e) {

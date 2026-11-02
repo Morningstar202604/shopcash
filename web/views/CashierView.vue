@@ -36,7 +36,7 @@ function pressKey(k) {
   }
   if (k === '.' && amountText.value.includes('.')) return
   if (k === '.' && !amountText.value) amountText.value = '0'
-  if (/\.\d{2}$/.test(amountText.value)) return
+  if (amountText.value.includes('.') && amountText.value.split('.')[1].length + k.length > 2) return
   if (!amountText.value && k === '00') return
   amountText.value += k
   validateLive()

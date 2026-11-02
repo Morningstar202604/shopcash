@@ -31,27 +31,22 @@ jobs:
       - name: 内核单测（含覆盖率门槛 90%）
         run: npm test -- --coverage
 
+      - name: Mock 安全与界面回归
+        run: |
+          npm run test:mock-security
+          npm run test:regression
+
       - name: 前端构建
         run: npm run build
 
       - name: 安装界面自检所需浏览器
         run: npx playwright install --with-deps chromium
 
-      # 关键：服务与两项端到端检查必须在同一个 step 内，
-      # GitHub Actions 每个 step 是独立 shell，跨 step 的后台进程不会存活
-      - name: 端到端自检（24 项资金/权限规则 + 20 步界面实跑）
+      - name: 隔离入口回归测试
+        run: npm run test:isolation
+
+      - name: 端到端自检（隔离服务）
         run: |
-          set -e
-          npx vite --host 127.0.0.1 --port 5199 > /tmp/vite.log 2>&1 &
-          VITE_PID=$!
-          trap 'kill $VITE_PID 2>/dev/null || true' EXIT
-          for i in $(seq 1 60); do
-            curl -sf http://127.0.0.1:5199/api/bootstrap/state > /dev/null && break
-            sleep 1
-          done
-          if ! curl -sf http://127.0.0.1:5199/api/bootstrap/state > /dev/null; then
-            echo "开发接口未就绪，vite 日志："; cat /tmp/vite.log; exit 1
-          fi
           npm run test:api
           SHOTS_DIR="$RUNNER_TEMP/shots" npm run test:ui
 

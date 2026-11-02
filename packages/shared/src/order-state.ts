@@ -93,6 +93,10 @@ export function decidePayment(
   if (order.status === 'EXCEPTION') {
     return { to: 'EXCEPTION', changed: false, note: '异常单须店主人工结案' }
   }
+  // 退款进行中：重复到账通知不得把订单退回 PAID（退款流程拥有状态所有权）
+  if (order.status === 'REFUNDING') {
+    return { to: 'REFUNDING', changed: false, note: '退款处理中，忽略支付结果' }
+  }
 
   // 非成功结果：保持原态，交给超时关单或下一轮轮询
   if (result.status === 'FAILED') {

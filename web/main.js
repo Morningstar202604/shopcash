@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import './styles.css'
-import { api, state } from './store.js'
+import { api, state, refreshMe } from './store.js'
 
 import SetupView from './views/SetupView.vue'
 import LoginView from './views/LoginView.vue'
@@ -13,23 +13,27 @@ import OrdersView from './views/OrdersView.vue'
 import ShiftsView from './views/ShiftsView.vue'
 import ExceptionsView from './views/ExceptionsView.vue'
 import ChannelsView from './views/ChannelsView.vue'
+import UnavailableView from './views/UnavailableView.vue'
 
 const routes = [
   { path: '/setup', component: SetupView, meta: { public: true, bare: true } },
   { path: '/login', component: LoginView, meta: { public: true, bare: true } },
-  { path: '/dashboard', component: DashboardView, meta: { ownerOnly: true } },
+  { path: '/dashboard', component: DashboardView, meta: { manage: true } },
   { path: '/cashier', component: CashierView },
   { path: '/orders', component: OrdersView },
   { path: '/shifts', component: ShiftsView },
-  { path: '/exceptions', component: ExceptionsView, meta: { ownerOnly: true } },
-  { path: '/channels', component: ChannelsView, meta: { ownerOnly: true } },
+  { path: '/refunds', component: UnavailableView, meta: { manage: true } },
+  { path: '/exceptions', component: ExceptionsView, meta: { manage: true } },
+  { path: '/channels', component: ChannelsView, meta: { manage: true } },
+  { path: '/stores', component: UnavailableView, meta: { manage: true } },
+  { path: '/staff', component: UnavailableView, meta: { manage: true } },
+  { path: '/audit', component: UnavailableView, meta: { manage: true } },
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })
 
 let bootChecked = false
 
-// 守卫顺序：未完成首启 → /setup；未登录 → /login；角色不足 → /cashier
 router.beforeEach(async (to) => {
   if (!bootChecked) {
     try {
@@ -41,19 +45,23 @@ router.beforeEach(async (to) => {
     bootChecked = true
   }
 
-  if (!state.setupDone && to.path !== '/setup') return '/setup'
-  if (state.setupDone && to.path === '/setup') return '/login'
+  if (to.path === '/setup') {
+    if (!state.setupDone && !state.token) return true
+    if (!state.token) return '/login'
+  }
+  if (!state.setupDone && to.path !== '/setup' && !state.token) return '/setup'
 
   if (to.meta.public) return true
 
   if (!state.me) {
     try {
-      state.me = await api('/auth/me')
+      state.me = await refreshMe()
+      if (!state.summary) await api('/dashboard/summary').then((d) => (state.summary = d))
     } catch {
       return '/login'
     }
   }
-  if (to.meta.ownerOnly && state.me?.role !== 'OWNER') return '/cashier'
+  if (to.meta.manage && !['OWNER', 'MANAGER'].includes(state.me?.role)) return '/cashier'
   return true
 })
 

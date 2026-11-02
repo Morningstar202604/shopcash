@@ -210,8 +210,9 @@ export function handle(db, method, rawUrl, body) {
   // 引导
   if (p === '/bootstrap/state') return J(200, { setupDone: db.setupDone, storeName: db.storeName })
   // 仅开发用：把演示数据重置回初始状态，让界面自检可重复跑（生产不暴露此路由）
-  if (method === 'POST' && p === '/__test/reset') {
-    Object.assign(db, createSeed())
+ if (method === 'POST' && p === '/__test/reset') {
+ if (!process.env.SHOPCASH_ISOLATION_TOKEN) return E(404,40401, '接口不存在')
+ Object.assign(db, createSeed())
     reseedOrders(db)
     // ?setup=0 用于截首启向导：清空用户并标记未初始化
     if (url.searchParams.get('setup') === '0') {
@@ -243,7 +244,7 @@ export function handle(db, method, rawUrl, body) {
     if (u.status === 'DISABLED') return E(403, 40302, '账号已停用，请联系店主')
     const open = openShiftOf(db, u.id)
     db.session = { userId: u.id, role: u.role, username: u.username, shiftId: open?.id || null, mustChangePwd: false }
-    return J(200, db.session)
+    return J(200, { ...db.session, token: 'mock-session' })
   }
   if (method === 'POST' && p === '/auth/logout') {
     // 只结束会话，不结束班次：班次是业务事实，重登后由 openShiftOf 自动恢复
@@ -254,10 +255,14 @@ export function handle(db, method, rawUrl, body) {
     if (!db.session.userId) return E(401, 40101, '未登录')
     const open = openShiftOf(db, db.session.userId)
     db.session.shiftId = open?.id || null
-    return J(200, { ...db.session, user: db.users.find((u) => u.id === db.session.userId) })
-  }
+ const user = db.users.find((u) => u.id === db.session.userId)
+ const publicUser = user && { id: user.id, username: user.username, displayName: user.displayName, role: user.role, status: user.status }
+ return J(200, { ...db.session, user: publicUser })
+ }
 
-  // 班次
+ if (!db.session.userId) return E(401,40101, '未登录')
+
+ // 班次
   if (p === '/shifts' && method === 'GET') {
     return J(200, db.shifts.map((s) => {
       const live = s.status === 'OPEN' ? shiftTotals(db, s.id) : null
@@ -321,7 +326,8 @@ export function handle(db, method, rawUrl, body) {
     if (body.amountFen > db.settings.singleMaxFen) return E(400, 42901, '金额超出单笔上限')
     if (body.clientRequestId && db.orders.some((o) => o.clientRequestId === body.clientRequestId)) {
       const existed = db.orders.find((o) => o.clientRequestId === body.clientRequestId)
-      return J(200, { ...existed, idempotent: true, payload: buildPayload(existed) })
+      if (existed.createdById !== db.session.userId || existed.shiftId !== db.session.shiftId || existed.amountFen !== body.amountFen || existed.codeType !== (body.codeType || 'MOCK') || existed.subject !== (body.subject || '') || existed.remark !== (body.remark || '')) return E(409,40909, '请求标识与已有订单冲突')
+ return J(200, { ...existed, idempotent: true, payload: buildPayload(existed) })
     }
     const now = iso()
     const order = {
@@ -363,7 +369,8 @@ export function handle(db, method, rawUrl, body) {
   if (method === 'GET' && statusMatch) {
     const o = db.orders.find((x) => x.orderNo === statusMatch[1])
     if (!o) return E(404, 40401, '订单不存在')
-    const due = o.nextQueryAt && new Date(o.nextQueryAt) <= new Date()
+    if (db.session.role !== 'OWNER' && !(o.createdById === db.session.userId && o.shiftId === db.session.shiftId)) return E(403,40312, '只能查看本人当班的订单')
+ const due = o.nextQueryAt && new Date(o.nextQueryAt) <= new Date()
     const open = o.status === 'PENDING' || o.status === 'PAYING'
     // 迟到成功探测：已关单但渠道后又付了，必须还能被查到并进人工（PRD 硬规则 2）
     const lateProbe = o.status === 'CLOSED' && o.mockPaidAt && !o.lateChecked

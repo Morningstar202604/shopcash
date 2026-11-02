@@ -24,6 +24,10 @@ function mockApi() {
     })
 
   const middleware = async (req, res, next) => {
+    if (req.url === '/__shopcash_isolation' && process.env.SHOPCASH_ISOLATION_TOKEN) {
+      res.end(process.env.SHOPCASH_ISOLATION_TOKEN)
+      return
+    }
     if (!req.url.startsWith('/api')) return next()
     const out = handle(db, req.method, req.url, req.method === 'GET' ? {} : await readBody(req))
     res.statusCode = out.status

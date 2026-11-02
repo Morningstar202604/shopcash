@@ -11,7 +11,18 @@ async function load() {
   channels.value = await api('/channels')
 }
 
+function clearForm() {
+  Object.assign(form, { code: '', appid: '', mchid: '', privateKeyPem: '', apiV3Key: '', confirmPassword: '' })
+  err.value = ''
+}
+
+function cancel() {
+  panel.value = null
+  clearForm()
+}
+
 function edit(c) {
+  clearForm()
   panel.value = c.code
   form.code = c.code
   err.value = ''
@@ -22,13 +33,8 @@ async function save() {
   if (!form.confirmPassword) return (err.value = '保存渠道凭据需要店主口令二次确认')
   try {
     await api(`/channels/${form.code}/credentials`, { method: 'PUT', body: { ...form } })
-    toast('ok', '凭据已加密保存')
-    panel.value = null
-    form.appid = ''
-    form.mchid = ''
-    form.privateKeyPem = ''
-    form.apiV3Key = ''
-    form.confirmPassword = ''
+    toast('warn', '演示模式：仅记录配置状态，凭据未保存')
+    cancel()
     await load()
   } catch (e) {
     err.value = e.message
@@ -74,8 +80,8 @@ onMounted(load)
     </div>
 
     <div v-if="panel" class="card">
-      <div class="card-title"><h2>配置 {{ panel }} 商户凭据</h2><button @click="panel = null">取消</button></div>
-      <p class="muted">私钥与 APIv3 密钥会用本机密钥文件加密后存储，界面只显示掩码。请勿把这些内容截图或发给任何人。</p>
+      <div class="card-title"><h2>配置 {{ panel }} 商户凭据</h2><button @click="cancel">取消</button></div>
+      <p class="muted">演示模式不会保存凭据或连接真实渠道，请勿输入真实私钥、密钥或口令。</p>
       <div class="grid grid-2">
         <div class="field"><label>AppID</label><input v-model="form.appid" placeholder="wx…" /></div>
         <div class="field"><label>商户号</label><input v-model="form.mchid" placeholder="1900…" /></div>
@@ -87,7 +93,7 @@ onMounted(load)
       <div class="field"><label>APIv3 密钥</label><input v-model="form.apiV3Key" type="password" /></div>
       <div class="field"><label>店主口令（二次确认）</label><input v-model="form.confirmPassword" type="password" /></div>
       <div v-if="err" class="err">{{ err }}</div>
-      <button class="btn-primary btn-lg gap-top" @click="save">加密保存并自检</button>
+      <button class="btn-primary btn-lg gap-top" @click="save">提交演示配置</button>
     </div>
   </div>
 </template>

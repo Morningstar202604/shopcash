@@ -73,6 +73,15 @@ describe('硬规则 2：迟到的成功只进人工', () => {
     expect(d.to).toBe('REFUNDED')
     expect(d.changed).toBe(false)
   })
+
+  it('REFUNDING 期间重复到账不把订单退回 PAID', () => {
+    const d = decidePayment(
+      { status: 'REFUNDING', amountFen: 1280 },
+      { status: 'SUCCESS', amountFen: 1280 },
+    )
+    expect(d.to).toBe('REFUNDING')
+    expect(d.changed).toBe(false)
+  })
 })
 
 describe('失败与未知结果', () => {
